@@ -11,7 +11,7 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
-      REPO_NAME: <repo>   # ← 换成你的仓库名
+      REPO_NAME: vue-pages-ts-demo   # ← 换成你的仓库名
       # USE_CUSTOM_DOMAIN: 'true'
       # CUSTOM_DOMAIN: example.com
 
