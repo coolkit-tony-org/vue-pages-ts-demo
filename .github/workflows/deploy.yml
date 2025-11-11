@@ -1,0 +1,65 @@
+name: Deploy (Project Pages)
+
+on:
+    push:
+        branches: [main]
+
+permissions:
+    contents: write
+
+jobs:
+    build-and-deploy:
+        runs-on: ubuntu-latest
+        env:
+            # 若本项目绑定了自定义域名，把它设为 'true'；否则保持注释或 'false'
+            # USE_CUSTOM_DOMAIN: 'true'
+            # 可选：自定义域名值（仅当上面设为 true 且要自动写入 CNAME）
+            # CUSTOM_DOMAIN: example.com
+            REPO_NAME: vue-pages-ts-demo # ⚠️ 改成你的仓库名，供校验/日志用
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Node (LTS) + pnpm cache
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 'lts/*'
+                  cache: 'pnpm'
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+              with:
+                  version: latest
+
+            - name: Install
+              run: pnpm install --frozen-lockfile
+
+            - name: Build
+              run: |
+                  if [ "${USE_CUSTOM_DOMAIN}" = "true" ]; then
+                    echo "Build with custom domain base=/"
+                    USE_CUSTOM_DOMAIN=true pnpm build
+                  else
+                    echo "Build for Project Pages base=/${REPO_NAME}/"
+                    pnpm build
+                  fi
+
+            # SPA 刷新回退
+            - name: Create 404.html
+              run: cp dist/index.html dist/404.html
+
+            # 防止 Jekyll 误处理
+            - name: Disable Jekyll
+              run: touch dist/.nojekyll
+
+            # 可选：自动写入 CNAME（仅当使用自定义域名时）
+            - name: Add CNAME (optional)
+              if: env.USE_CUSTOM_DOMAIN == 'true' && env.CUSTOM_DOMAIN != ''
+              run: echo "$CUSTOM_DOMAIN" > dist/CNAME
+
+            - name: Deploy to gh-pages
+              uses: peaceiris/actions-gh-pages@v4
+              with:
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  publish_dir: ./dist
