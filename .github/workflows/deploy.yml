@@ -1,65 +1,62 @@
 name: Deploy (Project Pages)
 
 on:
-    push:
-        branches: [main]
+  push:
+    branches: [ main ]
 
 permissions:
-    contents: write
+  contents: write
 
 jobs:
-    build-and-deploy:
-        runs-on: ubuntu-latest
-        env:
-            # 若本项目绑定了自定义域名，把它设为 'true'；否则保持注释或 'false'
-            # USE_CUSTOM_DOMAIN: 'true'
-            # 可选：自定义域名值（仅当上面设为 true 且要自动写入 CNAME）
-            # CUSTOM_DOMAIN: example.com
-            REPO_NAME: vue-pages-ts-demo # ⚠️ 改成你的仓库名，供校验/日志用
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      REPO_NAME: <repo>   # ← 换成你的仓库名
+      # USE_CUSTOM_DOMAIN: 'true'
+      # CUSTOM_DOMAIN: example.com
 
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            - name: Setup Node (LTS) + pnpm cache
-              uses: actions/setup-node@v4
-              with:
-                  node-version: 'lts/*'
-                  cache: 'pnpm'
+      # 先装 pnpm（此时系统已具备 pnpm 可执行文件）
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9           # 固定主版本更稳
+          # run_install: false # 我们下面自己跑 install
 
-            - name: Setup pnpm
-              uses: pnpm/action-setup@v4
-              with:
-                  version: latest
+      # 再装 Node，并用 cache: 'pnpm' 恢复缓存
+      - name: Setup Node (LTS) + pnpm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
 
-            - name: Install
-              run: pnpm install --frozen-lockfile
+      - name: Install
+        run: pnpm install --frozen-lockfile
 
-            - name: Build
-              run: |
-                  if [ "${USE_CUSTOM_DOMAIN}" = "true" ]; then
-                    echo "Build with custom domain base=/"
-                    USE_CUSTOM_DOMAIN=true pnpm build
-                  else
-                    echo "Build for Project Pages base=/${REPO_NAME}/"
-                    pnpm build
-                  fi
+      - name: Build
+        run: |
+          if [ "${USE_CUSTOM_DOMAIN}" = "true" ]; then
+            USE_CUSTOM_DOMAIN=true pnpm build
+          else
+            pnpm build
+          fi
 
-            # SPA 刷新回退
-            - name: Create 404.html
-              run: cp dist/index.html dist/404.html
+      - name: Create 404.html (SPA fallback)
+        run: cp dist/index.html dist/404.html
 
-            # 防止 Jekyll 误处理
-            - name: Disable Jekyll
-              run: touch dist/.nojekyll
+      - name: Disable Jekyll
+        run: touch dist/.nojekyll
 
-            # 可选：自动写入 CNAME（仅当使用自定义域名时）
-            - name: Add CNAME (optional)
-              if: env.USE_CUSTOM_DOMAIN == 'true' && env.CUSTOM_DOMAIN != ''
-              run: echo "$CUSTOM_DOMAIN" > dist/CNAME
+      - name: Add CNAME (optional)
+        if: env.USE_CUSTOM_DOMAIN == 'true' && env.CUSTOM_DOMAIN != ''
+        run: echo "$CUSTOM_DOMAIN" > dist/CNAME
 
-            - name: Deploy to gh-pages
-              uses: peaceiris/actions-gh-pages@v4
-              with:
-                  github_token: ${{ secrets.GITHUB_TOKEN }}
-                  publish_dir: ./dist
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
