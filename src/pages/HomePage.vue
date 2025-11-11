@@ -5,6 +5,6 @@ const msg: string = 'Hello GitHub Pages (Vue+TS)'
 <template>
     <main>
         <h1>{{ msg }}</h1>
-        <p><router-link to="/about">Go About</router-link></p>
+        <p><router-link to="/about">Go About(Testing for github action )</router-link></p>
     </main>
 </template>
