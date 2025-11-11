@@ -1,1 +1,0 @@
-import{d as a,c as n,a as t,t as s,b as r,w as l,r as u,o as c,e as m}from"./index-DL4nXbHo.js";const p="Hello GitHub Pages (Vue+TS)",f=a({__name:"HomePage",setup(i){return(_,e)=>{const o=u("router-link");return c(),n("main",null,[t("h1",null,s(p)),t("p",null,[r(o,{to:"/about"},{default:l(()=>[...e[0]||(e[0]=[m("Go About",-1)])]),_:1})])])}}});export{f as default};
