@@ -308,9 +308,9 @@ const enhanceColumns = (cols: ColumnsType<FlatRow>): ColumnsType<FlatRow> =>
             const options =
                 enumKey === 'online'
                     ? [
-                          { text: '在线', value: 'true' },
-                          { text: '离线', value: 'false' },
-                      ]
+                        { text: '在线', value: 'true' },
+                        { text: '离线', value: 'false' },
+                    ]
                     : enumOptions.value[enumKey].map(value => ({ text: value, value }))
             nextCol.filters = options
             const selected = enums.value[enumKey]
@@ -400,7 +400,7 @@ const handleTableChange = (_pagination: unknown, filters: Record<string, any>, s
     <section class="page-section">
         <!-- 工具条 -->
         <div class="toolbar">
-            <Space wrap class="toolbar-controls">
+            <Space class="toolbar-controls">
                 <Input v-model:value="searchText" placeholder="搜索：设备ID / 名称 / 品牌 / 型号 / UI / 类型" style="width: 360px"
                     allow-clear @input="debouncedQuery()" />
                 <Select v-model:value="matchMode" style="width: 140px" @change="runQuery">
@@ -442,11 +442,11 @@ const handleTableChange = (_pagination: unknown, filters: Record<string, any>, s
         </div>
 
         <div class="data-table-shell">
-                <div class="data-table-header">
-                    <div class="header-inner" :style="{ transform: `translateX(-${horizontalOffset}px)` }">
-                        <Table class="data-table" size="small" bordered :columns="tableColumns" :dataSource="[]"
-                            :pagination="false" :rowKey="rowKey" :style="{ minWidth: tableWidth }"
-                            @change="handleTableChange" />
+            <div class="data-table-header">
+                <div class="header-inner" :style="{ transform: `translateX(-${horizontalOffset}px)` }">
+                    <Table class="data-table" size="small" bordered :columns="tableColumns" :dataSource="[]"
+                        :pagination="false" :rowKey="rowKey" :style="{ minWidth: tableWidth }"
+                        @change="handleTableChange" />
                 </div>
             </div>
             <div class="data-table-body" :style="[containerProps.style, { height: TABLE_HEIGHT }]" ref="bodyScrollRef"
@@ -457,23 +457,23 @@ const handleTableChange = (_pagination: unknown, filters: Record<string, any>, s
                 <template v-else>
                     <div class="virtual-phantom" :style="phantomStyle">
                         <div class="virtual-inner" :style="translateStyle">
-                            <Table class="data-table" :columns="tableColumns" :dataSource="visibleRows" :pagination="false"
-                                :rowKey="rowKey" size="small" bordered :showHeader="false"
+                            <Table class="data-table" :columns="tableColumns" :dataSource="visibleRows"
+                                :pagination="false" :rowKey="rowKey" size="small" bordered :showHeader="false"
                                 :style="{ minWidth: tableWidth }" />
                         </div>
                     </div>
                 </template>
             </div>
-                <div v-if="loading" class="tbl-loading">
-                    <Spin />
-                </div>
+            <div v-if="loading" class="tbl-loading">
+                <Spin />
             </div>
+        </div>
     </section>
 </template>
 
 <style scoped>
 .page-section {
-    padding: 20px;
+    padding: 12px 20px 20px;
     min-height: 100vh;
     background: radial-gradient(circle at top, #f8fafc, #eef2f7 60%, #e5e9f0);
     transition: background 0.4s ease;
@@ -498,11 +498,13 @@ const handleTableChange = (_pagination: unknown, filters: Record<string, any>, s
     align-items: center;
 }
 
-.toolbar :deep(.ant-select), .toolbar :deep(.ant-input) {
+.toolbar :deep(.ant-select),
+.toolbar :deep(.ant-input) {
     transition: box-shadow 0.3s ease;
 }
 
-.toolbar :deep(.ant-select-focused), .toolbar :deep(.ant-input-focused) {
+.toolbar :deep(.ant-select-focused),
+.toolbar :deep(.ant-input-focused) {
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
 
@@ -583,14 +585,14 @@ const handleTableChange = (_pagination: unknown, filters: Record<string, any>, s
     background: rgba(59, 130, 246, 0.08);
 }
 
- .toolbar-stats {
+.toolbar-stats {
     display: flex;
     align-items: center;
     gap: 14px;
     font-size: 13px;
     color: #6b7280;
     white-space: nowrap;
- }
+}
 
 .status-pill {
     display: inline-flex;
@@ -660,6 +662,7 @@ const handleTableChange = (_pagination: unknown, filters: Record<string, any>, s
         opacity: 0;
         transform: translateY(20px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -671,6 +674,7 @@ const handleTableChange = (_pagination: unknown, filters: Record<string, any>, s
         opacity: 0;
         transform: translateY(-8px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -681,6 +685,7 @@ const handleTableChange = (_pagination: unknown, filters: Record<string, any>, s
     from {
         opacity: 0;
     }
+
     to {
         opacity: 1;
     }
@@ -691,6 +696,7 @@ const handleTableChange = (_pagination: unknown, filters: Record<string, any>, s
         opacity: 0;
         transform: translateY(6px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -702,10 +708,12 @@ const handleTableChange = (_pagination: unknown, filters: Record<string, any>, s
         transform: scale(1);
         opacity: 1;
     }
+
     50% {
         transform: scale(1.4);
         opacity: 0.5;
     }
+
     100% {
         transform: scale(1);
         opacity: 1;
