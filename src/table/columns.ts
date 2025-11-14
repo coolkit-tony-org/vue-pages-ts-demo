@@ -1,75 +1,181 @@
 import type { ColumnsType, ColumnType } from 'ant-design-vue/es/table'
 import type { FlatRow } from '@/types/data'
-import { maskSensitive } from '@/utils/flatten'
 
-type FlatKey = Extract<keyof FlatRow, string>
+export type GroupKey = 'ewlink' | 'matter' | 'homeAssistant'
 
-const boolCell = (value?: boolean) => (value ? '是' : '否')
+const boolIcon = (value?: boolean) => (value ? '✔' : '—')
+const listDisplay = (list: string[]) => (list.length ? list.join('、') : '—')
 
-const column = (
-    key: FlatKey | string,
+const createColumn = (
+    key: keyof FlatRow | string,
     title: string,
-    options: Partial<ColumnType<FlatRow>> = {}
+    options: Partial<ColumnType<FlatRow>> = {},
+    span = true
 ): ColumnType<FlatRow> => ({
     key,
     dataIndex: key as ColumnType<FlatRow>['dataIndex'],
     title,
     ellipsis: true,
-    align: 'left',
     width: 160,
+    align: 'left',
+    customCell: span
+        ? ((record: FlatRow) => ({
+              rowSpan: record.isGroupHead ? record.groupSpan : 0,
+          }))
+        : undefined,
     ...options,
 })
 
+const deviceInfoColumns: ColumnsType<FlatRow> = [
+    createColumn('deviceModel', '设备型号', { width: 180, fixed: 'left' }),
+    createColumn('deviceType', '设备类型', { width: 140 }),
+    createColumn('deviceBrand', '品牌', { width: 140 }),
+    createColumn('deviceCategory', '设备类别', { width: 160 }),
+]
+
+const ewlinkColumns: ColumnsType<FlatRow> = [
+    createColumn(
+        'ewlinkSupported',
+        '云支持',
+        {
+            width: 120,
+            align: 'center',
+            customRender: ({ record }) => boolIcon(record.ewlinkSupported),
+        }
+    ),
+    createColumn(
+        'ewlinkCapabilities',
+        '支持能力',
+        {
+            width: 220,
+            customRender: ({ record }) => listDisplay(record.ewlinkCapabilities),
+        }
+    ),
+]
+
+const matterColumns: ColumnsType<FlatRow> = [
+    createColumn(
+        'matterSupported',
+        'Bridge 支持',
+        {
+            width: 120,
+            align: 'center',
+            customRender: ({ record }) => boolIcon(record.matterSupported),
+        }
+    ),
+    createColumn('matterDeviceType', 'Matter Device Type', { width: 220 }, false),
+    createColumn(
+        'matterSupportedClusters',
+        'Cluster 支持情况',
+        {
+            width: 260,
+            customRender: ({ record }) =>
+                stringifyClusterInfo(record.matterSupportedClusters, record.matterUnsupportedClusters),
+        },
+        false
+    ),
+    createColumn('matterProtocolVersion', 'Matter 协议版本', { width: 160 }, false),
+    createColumn(
+        'appleSupported',
+        'Apple Home',
+        {
+            width: 220,
+            customRender: ({ record }) => withNotes(record.appleSupported, record.appleNotes),
+        },
+        false
+    ),
+    createColumn(
+        'googleSupported',
+        'Google Home',
+        {
+            width: 220,
+            customRender: ({ record }) => withNotes(record.googleSupported, record.googleNotes),
+        },
+        false
+    ),
+    createColumn(
+        'smartThingsSupported',
+        'SmartThings',
+        {
+            width: 220,
+            customRender: ({ record }) => withNotes(record.smartThingsSupported, record.smartThingsNotes),
+        },
+        false
+    ),
+    createColumn(
+        'alexaSupported',
+        'Alexa',
+        {
+            width: 220,
+            customRender: ({ record }) => withNotes(record.alexaSupported, record.alexaNotes),
+        },
+        false
+    ),
+]
+
+const homeAssistantColumns: ColumnsType<FlatRow> = [
+    createColumn(
+        'homeAssistantSupported',
+        '同步到 HA',
+        {
+            width: 140,
+            align: 'center',
+            customRender: ({ record }) => boolIcon(record.homeAssistantSupported),
+        }
+    ),
+    createColumn(
+        'homeAssistantEntities',
+        'entities',
+        {
+            width: 200,
+            customRender: ({ record }) => listDisplay(record.homeAssistantEntities),
+        }
+    ),
+]
+
+function withNotes(supported: string[], notes: string[]) {
+    if (!supported.length && !notes.length) return '—'
+    const segments: string[] = []
+    if (supported.length) segments.push(`支持: ${supported.join(', ')}`)
+    if (notes.length) segments.push(`备注: ${notes.join('; ')}`)
+    return segments.join(' | ')
+}
+
+function stringifyClusterInfo(supported: string[], unsupported: string[]) {
+    if (!supported.length && !unsupported.length) return '—'
+    const pieces: string[] = []
+    if (supported.length) pieces.push(`支持: ${supported.join(', ')}`)
+    if (unsupported.length) pieces.push(`不支持: ${unsupported.join(', ')}`)
+    return pieces.join(' | ')
+}
+
+type ColumnWithGroup = ColumnType<FlatRow> & { groupKey?: GroupKey }
+
 export const baseColumns: ColumnsType<FlatRow> = [
     {
-        title: '设备基础信息',
+        title: '设备信息',
         key: 'group-device',
         fixed: 'left',
-        children: [
-            column('itemType', '设备类型', { width: 140, fixed: 'left' }),
-            column('index', '原始序号', { width: 120, align: 'center', fixed: 'left' }),
-            column('itemData.deviceid', '设备 ID', { width: 220, fixed: 'left' }),
-            column('itemData.name', '设备名称', { width: 200 }),
-            column('itemData.brandName', '品牌', { width: 140 }),
-            column('itemData.productModel', '产品型号', { width: 180 }),
-        ],
+        children: deviceInfoColumns,
     },
     {
-        title: '固件 / 在线状态',
-        key: 'group-status',
-        children: [
-            column('itemData.online', '在线状态', {
-                width: 120,
-                align: 'center',
-                customRender: ({ value }) => boolCell(value as boolean | undefined),
-            }),
-            column('itemData.extra.ui', 'UI 标识', { width: 160 }),
-            column('itemData.extra.uiid', 'UIID', { width: 120, align: 'center' }),
-            column('itemData.extra.model', '硬件型号', { width: 200 }),
-        ],
-    },
+        title: '易微联云',
+        key: 'group-ewlink',
+        groupKey: 'ewlink',
+        children: ewlinkColumns as ColumnsType<FlatRow>,
+    } as ColumnWithGroup,
     {
-        title: '关联 / 分组',
-        key: 'group-relation',
-        children: [
-            column('itemData.params.type', '设备类型(type)', { width: 160 }),
-            column('itemData.params.parentid', '父设备 ID', { width: 220 }),
-        ],
-    },
+        title: 'Matter Bridge',
+        key: 'group-matter',
+        groupKey: 'matter',
+        children: matterColumns as ColumnsType<FlatRow>,
+    } as ColumnWithGroup,
     {
-        title: '凭证 / 打码展示',
-        key: 'group-credential',
-        children: [
-            column('itemData.apikey', 'API Key(打码)', {
-                width: 220,
-                customRender: ({ value }) => maskSensitive(value as string | undefined),
-            }),
-            column('itemData.devicekey', 'Device Key(打码)', {
-                width: 240,
-                customRender: ({ value }) => maskSensitive(value as string | undefined),
-            }),
-        ],
-    },
+        title: 'Home Assistant',
+        key: 'group-homeassistant',
+        groupKey: 'homeAssistant',
+        children: homeAssistantColumns as ColumnsType<FlatRow>,
+    } as ColumnWithGroup,
 ]
 
 const collectLeafColumns = (cols: ColumnsType<FlatRow>, bucket: ColumnType<FlatRow>[] = []) => {
@@ -83,37 +189,22 @@ const collectLeafColumns = (cols: ColumnsType<FlatRow>, bucket: ColumnType<FlatR
     return bucket
 }
 
-export const leafColumns = collectLeafColumns(baseColumns)
-
-export const buildDefaultVisibility = (): Record<string, boolean> => {
-    const result: Record<string, boolean> = {}
-    leafColumns.forEach(col => {
-        const key = (col.key || col.dataIndex?.toString()) as string
-        if (key) result[key] = true
-    })
-    return result
-}
-
-export const filterColumnsByVisibility = (
+export const filterColumnsByGroup = (
     cols: ColumnsType<FlatRow>,
-    visible: Record<string, boolean>
+    visibleGroups: Record<GroupKey, boolean>
 ): ColumnsType<FlatRow> => {
-    const next: ColumnsType<FlatRow> = []
+    const result: ColumnsType<FlatRow> = []
     cols.forEach(col => {
+        const groupKey = (col as ColumnWithGroup).groupKey
+        if (groupKey && visibleGroups[groupKey] === false) return
         if ('children' in col && col.children) {
-            const filteredChildren = filterColumnsByVisibility(col.children, visible)
-            if (filteredChildren.length) {
-                next.push({ ...col, children: filteredChildren })
-            }
+            const children = filterColumnsByGroup(col.children, visibleGroups)
+            if (children.length) result.push({ ...col, children })
             return
         }
-        const leaf = col as ColumnType<FlatRow>
-        const key = (leaf.key || leaf.dataIndex?.toString()) as string | undefined
-        if (!key || visible[key] !== false) {
-            next.push(leaf)
-        }
+        result.push(col)
     })
-    return next
+    return result
 }
 
 export const sumColumnWidth = (cols: ColumnsType<FlatRow>): number =>

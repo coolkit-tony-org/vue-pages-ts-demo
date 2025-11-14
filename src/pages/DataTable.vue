@@ -1,117 +1,105 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, toRaw, watch, reactive, h } from 'vue'
+import { ref, computed, onMounted, toRaw, watch, h } from 'vue'
 import type { CSSProperties } from 'vue'
 import { useDebounceFn, useVirtualList } from '@vueuse/core'
-import { Table, Input, Select, Button, Space, Popover, Switch, Spin, Tag, InputNumber } from 'ant-design-vue'
+import { Table, Input, Button, Space, Popover, Switch, Spin, Tag, Checkbox } from 'ant-design-vue'
 
 import type { ColumnsType, ColumnType } from 'ant-design-vue/es/table'
-import type { FilterDropdownProps } from 'ant-design-vue/es/table/interface'
+import type { FilterDropdownProps, FilterValue } from 'ant-design-vue/es/table/interface'
 import type { FlatRow } from '../types/data'
-import type { EnumFilters, EnumOptionMap, MatchMode, RangeFilters, SortSpec } from '../workers/data.worker'
-import { baseColumns, buildDefaultVisibility, filterColumnsByVisibility, leafColumns, sumColumnWidth } from '../table/columns'
+import type { EnumFilters, EnumOptionMap } from '../workers/worker'
+import { baseColumns, filterColumnsByGroup, sumColumnWidth, type GroupKey } from '../table/columns'
 import { loadData, fetchDistinct, queryRows } from '../services/dataClient'
 
-type RangeState = {
-    uiid: NonNullable<RangeFilters['uiid']>
-    indexTop: NonNullable<RangeFilters['indexTop']>
-}
-
 const ROW_HEIGHT = 48
-const TABLE_HEIGHT = '70vh'
-let rowUid = 0
-const AntButton = Button as any
-const AntInputNumber = InputNumber as any
+const TABLE_HEIGHT = '85vh'
+// 筛选项的显示数量限制，每次显示更多也依照该增量展开，保持体验一致
+const MAX_FILTER_OPTIONS = 80
 
-// -------------------------------
-// 查询与状态
-// -------------------------------
+// 表头模块开关（大分组显隐），与列定义中的 groupKey 对应
+const groupOptions: Array<{ key: GroupKey; title: string }> = [
+    { key: 'ewlink', title: '易微联云' },
+    { key: 'matter', title: 'Matter Bridge' },
+    { key: 'homeAssistant', title: 'Home Assistant' },
+]
+
 const rows = ref<FlatRow[]>([])
 const total = ref(0)
 const loading = ref(false)
 const error = ref<string | null>(null)
-
 const searchText = ref('')
-const matchMode = ref<MatchMode>('contains')
 
+// 枚举筛选的默认空值；每次重置或 worker 返回 filters 时使用
 const createDefaultEnums = (): EnumFilters => ({
-    online: [],
-    model: [],
-    ui: [],
-    brandName: [],
-    productModel: [],
-    type: [],
-    parentid: [],
+    deviceModel: [],
+    deviceType: [],
+    brand: [],
+    category: [],
+    ewlinkSupported: [],
+    ewlinkCapabilities: [],
+    matterSupported: [],
+    matterDeviceType: [],
+    matterProtocolVersion: [],
+    matterSupportedClusters: [],
+    homeAssistantSupported: [],
+    homeAssistantEntities: [],
 })
-
-const createInitialEnumOptions = (): EnumOptionMap => ({
-    online: [true, false],
-    model: [],
-    ui: [],
-    brandName: [],
-    productModel: [],
-    type: [],
-    parentid: [],
-})
-
-const createDefaultRanges = (): RangeState => ({
-    uiid: { min: undefined, max: undefined },
-    indexTop: { min: undefined, max: undefined },
-})
-
-const cloneForWorker = <T,>(value: T): T => structuredClone(toRaw(value))
 
 const enums = ref<EnumFilters>(createDefaultEnums())
-const enumOptions = ref<EnumOptionMap>(createInitialEnumOptions())
-const ranges = ref<RangeState>(createDefaultRanges())
-
-const visibleCols = ref<Record<string, boolean>>(buildDefaultVisibility())
-
-const sort = ref<SortSpec[]>([
-    { id: 'itemData.online', desc: true },
-    { id: 'itemData.family.index', desc: true },
-    { id: 'itemData.deviceid', desc: false },
-])
-
-const antColumns = computed(() => filterColumnsByVisibility(baseColumns, visibleCols.value))
-const tableWidth = computed(() => `${sumColumnWidth(antColumns.value)}px`)
-
-const createRowId = (row: FlatRow) => `${row['itemData.deviceid'] ?? 'row'}-${rowUid++}`
-
-const assignRowId = (row: FlatRow): FlatRow => {
-    const clone = { ...row } as FlatRow & { __virtualId?: string }
-    clone.__virtualId = createRowId(row)
-    return clone
-}
-
-const rowKey = (row: FlatRow) => {
-    const target = row as FlatRow & { __virtualId?: string }
-    if (!target.__virtualId) {
-        target.__virtualId = createRowId(row)
-    }
-    return target.__virtualId
-}
-const leafColumnOptions = leafColumns.map(col => {
-    const dataIndex = Array.isArray(col.dataIndex) ? col.dataIndex.join('.') : col.dataIndex?.toString()
-    return {
-        key: (col.key || dataIndex || '') as string,
-        title: (col.title as string) || (col.key as string) || '',
-    }
+const enumOptions = ref<EnumOptionMap>({
+    deviceModel: [],
+    deviceType: [],
+    brand: [],
+    category: [],
+    ewlinkSupported: [],
+    ewlinkCapabilities: [],
+    matterSupported: [],
+    matterDeviceType: [],
+    matterProtocolVersion: [],
+    matterSupportedClusters: [],
+    homeAssistantSupported: [],
+    homeAssistantEntities: [],
 })
 
-// -------------------------------
-// 虚拟滚动（VueUse）
-// -------------------------------
+
+/** 三个组别的可视值 */
+const groupVisibility = ref<Record<GroupKey, boolean>>({
+    ewlink: true,
+    matter: true,
+    homeAssistant: true,
+})
+
+/**  */
+const enumFilterSearch = ref<Partial<Record<keyof EnumFilters, string>>>({})
+// 各列当前展开的筛选项数量；用于“显示更多”
+const enumFilterLimit = ref<Partial<Record<keyof EnumFilters, number>>>({})
+
+const getEnumFilterLimit = (key: keyof EnumFilters) => enumFilterLimit.value[key] ?? MAX_FILTER_OPTIONS
+const setEnumFilterLimit = (key: keyof EnumFilters, value: number) => {
+    enumFilterLimit.value = { ...enumFilterLimit.value, [key]: value }
+}
+const resetEnumFilterLimit = (key: keyof EnumFilters) => setEnumFilterLimit(key, MAX_FILTER_OPTIONS)
+const increaseEnumFilterLimit = (key: keyof EnumFilters) =>
+    setEnumFilterLimit(key, getEnumFilterLimit(key) + MAX_FILTER_OPTIONS)
+
+/** 根据模块开关过滤列分组，再在末端附加筛选设置 */
+const filteredColumns = computed(() => filterColumnsByGroup(baseColumns, groupVisibility.value))
+const tableColumns = computed(() => enhanceColumns(filteredColumns.value))
+const tableWidth = computed(() => `${sumColumnWidth(filteredColumns.value)}px`)
+const rowKey = (row: FlatRow) => row.rowId
+
+// 表格体用虚拟列表包裹 antd Table，保持所有内置交互（筛选、合并单元格）仍可工作
 const { list: virtualList, containerProps, wrapperProps, scrollTo } = useVirtualList(rows, {
     itemHeight: ROW_HEIGHT,
     overscan: 12,
 })
-
 const visibleRows = computed(() => virtualList.value.map(item => item.data))
 
 const phantomStyle = computed<CSSProperties>(() => ({
     height: wrapperProps.value.style.height ?? '0px',
 }))
 
+// virtual list 内部沿用 antd table，自行控制 translate 以模拟大列表
 const translateStyle = computed<CSSProperties>(() => {
     const style = wrapperProps.value.style as Record<string, string>
     if ('marginTop' in style) {
@@ -127,32 +115,32 @@ const translateStyle = computed<CSSProperties>(() => {
 })
 
 const bodyScrollRef = ref<HTMLElement | null>(null)
+// antd Table 内部会创建 div，需把虚拟列表容器与其 DOM 绑定
 watch(bodyScrollRef, el => {
     if ('value' in containerProps.ref) containerProps.ref.value = el
 })
-const horizontalOffset = ref(0)
 
+// 顶部“fake header”同步横向滚动，避免两个滚动条
+const horizontalOffset = ref(0)
 const handleBodyScroll = (event: Event) => {
     containerProps.onScroll()
     const target = event.target as HTMLElement
     horizontalOffset.value = target.scrollLeft
 }
 
-// -------------------------------
-// 查询触发（Worker）
-// -------------------------------
+// 避免响应式代理传入 worker 造成结构化克隆失败
+const cloneForWorker = <T,>(value: T): T => structuredClone(toRaw(value))
+
+// 查询走 worker，支持搜索 + 筛选；debounce 在输入时触发
 const runQuery = async () => {
     loading.value = true
     error.value = null
     try {
         const res = await queryRows({
             q: searchText.value,
-            mode: matchMode.value,
             enums: cloneForWorker(enums.value),
-            ranges: cloneForWorker(ranges.value),
-            sort: cloneForWorker(sort.value),
         })
-        rows.value = res.rows.map(assignRowId)
+        rows.value = res.rows
         total.value = res.total
         scrollTo(0)
     } catch (e: any) {
@@ -163,9 +151,6 @@ const runQuery = async () => {
 }
 const debouncedQuery = useDebounceFn(runQuery, 200)
 
-// -------------------------------
-// 初始化
-// -------------------------------
 onMounted(async () => {
     loading.value = true
     error.value = null
@@ -180,251 +165,258 @@ onMounted(async () => {
     }
 })
 
-// -------------------------------
-// 交互
-// -------------------------------
 function resetAll() {
     searchText.value = ''
-    matchMode.value = 'contains'
     enums.value = createDefaultEnums()
-    ranges.value = createDefaultRanges()
-    sort.value = [
-        { id: 'itemData.online', desc: true },
-        { id: 'itemData.family.index', desc: true },
-        { id: 'itemData.deviceid', desc: false },
-    ]
+    groupVisibility.value = { ewlink: true, matter: true, homeAssistant: true }
+    enumFilterSearch.value = {}
+    enumFilterLimit.value = {}
     runQuery()
 }
 
-function handleColumnVisibilityChange(columnId: string, checked: boolean | string | number) {
-    if (!columnId) return
+function handleGroupVisibilityChange(group: GroupKey, checked: boolean | string | number) {
     if (typeof checked === 'string') {
-        visibleCols.value[columnId] = checked === 'true'
-        return
+        groupVisibility.value[group] = checked === 'true'
+    } else if (typeof checked === 'number') {
+        groupVisibility.value[group] = checked === 1
+    } else {
+        groupVisibility.value[group] = checked
     }
-    if (typeof checked === 'number') {
-        visibleCols.value[columnId] = checked === 1
-        return
-    }
-    visibleCols.value[columnId] = checked
 }
 
 watch(rows, () => {
+    // 每次数据发生变化都滚动到最顶
     scrollTo(0)
 })
 
 const enumColumnMap: Record<string, keyof EnumFilters> = {
-    'itemData.online': 'online',
-    'itemData.extra.model': 'model',
-    'itemData.extra.ui': 'ui',
-    'itemData.brandName': 'brandName',
-    'itemData.productModel': 'productModel',
-    'itemData.params.type': 'type',
-    'itemData.params.parentid': 'parentid',
+    deviceModel: 'deviceModel',
+    deviceType: 'deviceType',
+    deviceBrand: 'brand',
+    deviceCategory: 'category',
+    ewlinkCapabilities: 'ewlinkCapabilities',
+    matterDeviceType: 'matterDeviceType',
+    matterProtocolVersion: 'matterProtocolVersion',
+    matterSupportedClusters: 'matterSupportedClusters',
+    homeAssistantEntities: 'homeAssistantEntities',
 }
 
-const rangeColumnMap: Record<string, keyof RangeState> = {}
-
-const sortableColumnMap: Record<string, SortSpec['id']> = {
-    'itemData.online': 'itemData.online',
-    'itemData.family.index': 'itemData.family.index',
-    'itemData.deviceid': 'itemData.deviceid',
+const booleanColumnMap: Record<string, keyof EnumFilters> = {
+    ewlinkSupported: 'ewlinkSupported',
+    matterSupported: 'matterSupported',
+    homeAssistantSupported: 'homeAssistantSupported',
 }
 
-const renderRangeDropdown = (rangeKey: keyof RangeState) => (props: FilterDropdownProps<FlatRow>) => {
-    const local = reactive<{ min?: number; max?: number }>({
-        min: ranges.value[rangeKey].min,
-        max: ranges.value[rangeKey].max,
-    })
+// 返回下拉可见列表 + 是否仍有剩余，方便显示“显示更多”
+const getDropdownOptionMeta = (enumKey: keyof EnumFilters, limit?: number) => {
+    const raw = enumOptions.value[enumKey] || []
+    const keyword = (enumFilterSearch.value[enumKey] || '').trim().toLowerCase()
+    const filtered = keyword ? raw.filter(opt => opt.value.toLowerCase().includes(keyword)) : raw
+    const effectiveLimit = limit ?? getEnumFilterLimit(enumKey)
+    return {
+        options: filtered.slice(0, effectiveLimit),
+        total: filtered.length,
+        hasMore: filtered.length > effectiveLimit,
+    }
+}
 
-    const apply = () => {
-        ranges.value[rangeKey] = {
-            min: local.min,
-            max: local.max,
+/** antd 列配置需要静态 filters，仅保留前 80 条用于勾选提示 */
+const getColumnFilterOptions = (enumKey: keyof EnumFilters) => {
+    const raw = enumOptions.value[enumKey] || []
+    return raw.slice(0, MAX_FILTER_OPTIONS)
+}
+
+/** 生成下拉选项框的DOM */
+const renderFilterDropdown =
+    (enumKey: keyof EnumFilters) =>
+        (props: FilterDropdownProps<FlatRow>) => {
+            const search = enumFilterSearch.value[enumKey] || ''
+            const limit = getEnumFilterLimit(enumKey)
+            const { options, hasMore, total } = getDropdownOptionMeta(enumKey, limit)
+            const selectedKeys = (props.selectedKeys as string[]) ?? []
+
+            const toggleValue = (value: string, checked: boolean) => {
+                const next = checked ? [...selectedKeys, value] : selectedKeys.filter(v => v !== value)
+                props.setSelectedKeys?.(next)
+            }
+
+            const clear = () => {
+                enumFilterSearch.value = { ...enumFilterSearch.value, [enumKey]: '' }
+                resetEnumFilterLimit(enumKey)
+                props.clearFilters?.()
+            }
+
+            return h(
+                'div',
+                { class: 'ant-dropdown ant-table-filter-dropdown custom-filter-dropdown' },
+                [
+                    h('div', { class: 'ant-table-filter-dropdown-search' }, [
+                        h(Input, {
+                            size: 'small',
+                            allowClear: true,
+                            placeholder: '搜索选项',
+                            value: search,
+                            'onUpdate:value': (val: string) => {
+                                enumFilterSearch.value = { ...enumFilterSearch.value, [enumKey]: val }
+                                resetEnumFilterLimit(enumKey)
+                            },
+                        }),
+                    ]),
+                    h(
+                        'div',
+                        {
+                            class:
+                                'ant-dropdown-menu ant-dropdown-menu-root ant-table-filter-dropdown-menu filter-menu',
+                        },
+                        options.length
+                            ? options.map(opt =>
+                                h(
+                                    'label',
+                                    {
+                                        key: opt.value,
+                                        class: 'ant-dropdown-menu-item filter-menu-item',
+                                    },
+                                    [
+                                        h(Checkbox, {
+                                            checked: selectedKeys.includes(opt.value),
+                                            onChange: (e: any) => toggleValue(opt.value, e.target.checked),
+                                        }),
+                                        h(
+                                            'span',
+                                            { class: 'filter-menu-text' },
+                                            `${formatFilterLabel(enumKey, opt.value)} (${opt.count})`
+                                        ),
+                                    ]
+                                )
+                            )
+                            : h('div', { class: 'filter-empty' }, '无匹配项')
+                    ),
+                    hasMore
+                        ? h(
+                            'div',
+                            { class: 'filter-more' },
+                            h(
+                                Button,
+                                {
+                                    type: 'link',
+                                    size: 'small',
+                                    onClick: () => increaseEnumFilterLimit(enumKey),
+                                },
+                                () => `显示更多 (${Math.min(limit, total)}/${total})`
+                            )
+                        )
+                        : null,
+                    h('div', { class: 'ant-table-filter-dropdown-btns' }, [
+                        h(
+                            Button,
+                            {
+                                size: 'small',
+                                type: 'link',
+                                onClick: clear,
+                            },
+                            () => '清除'
+                        ),
+                        h(
+                            Button,
+                            {
+                                type: 'primary',
+                                size: 'small',
+                                onClick: () => props.confirm?.(),
+                            },
+                            () => '确定'
+                        ),
+                    ]),
+                ]
+            )
         }
-        props.confirm?.()
-        runQuery()
-    }
 
-    const reset = () => {
-        local.min = undefined
-        local.max = undefined
-        ranges.value[rangeKey] = { min: undefined, max: undefined }
-        props.confirm?.()
-        runQuery()
-    }
-
-    return h('div', { class: 'range-filter-dropdown' }, [
-        h(Space, { direction: 'vertical', style: 'width: 200px' }, [
-            h(AntInputNumber, {
-                value: local.min,
-                placeholder: '最小值',
-                style: 'width: 100%',
-                'onUpdate:value': (val: number | null) => {
-                    local.min = typeof val === 'number' ? val : undefined
-                },
-            }),
-            h(AntInputNumber, {
-                value: local.max,
-                placeholder: '最大值',
-                style: 'width: 100%',
-                'onUpdate:value': (val: number | null) => {
-                    local.max = typeof val === 'number' ? val : undefined
-                },
-            }),
-            h('div', { class: 'range-filter-actions' }, [
-                h(
-                    AntButton,
-                    {
-                        size: 'small',
-                        onClick: reset,
-                    },
-                    { default: () => '清除' }
-                ),
-                h(
-                    AntButton,
-                    {
-                        type: 'primary',
-                        size: 'small',
-                        onClick: apply,
-                    },
-                    { default: () => '确定' }
-                ),
-            ]),
-        ]),
-    ])
-}
-
-const enhanceColumns = (cols: ColumnsType<FlatRow>): ColumnsType<FlatRow> =>
-    cols.map(col => {
+/** 在列定义上再注入 antd 筛选能力、筛选项以及相关配置 */
+const enhanceColumns = (cols: ColumnsType<FlatRow>): ColumnsType<FlatRow> => {
+    return cols.map(col => {
+        // 存在叶子筛选项就继续递归（比如易微联的叶子筛选项是云支持+设备能力）
         if ('children' in col && col.children) {
             return { ...col, children: enhanceColumns(col.children) }
         }
         const leaf = col as ColumnType<FlatRow>
-        const key = (leaf.key || leaf.dataIndex?.toString()) as string
-        const nextCol: ColumnType<FlatRow> = { ...leaf }
-        const enumKey = enumColumnMap[key]
-        if (enumKey) {
-            const options =
-                enumKey === 'online'
-                    ? [
-                        { text: '在线', value: 'true' },
-                        { text: '离线', value: 'false' },
-                    ]
-                    : enumOptions.value[enumKey].map(value => ({ text: value, value }))
-            nextCol.filters = options
-            const selected = enums.value[enumKey]
-            nextCol.filteredValue =
-                selected && selected.length
-                    ? enumKey === 'online'
-                        ? selected.map(v => String(v))
-                        : [...selected]
-                    : null
-            nextCol.filterMultiple = true
+        const key = leaf.key as string | undefined
+        if (!key) {
+            throw new Error('每个需要筛选的列都必须提供唯一 key')
         }
-        const rangeKey = rangeColumnMap[key]
-        if (rangeKey) {
-            const range = ranges.value[rangeKey]
-            nextCol.filteredValue =
-                range.min != null || range.max != null ? [`${range.min ?? ''}|${range.max ?? ''}`] : null
-            nextCol.filterDropdown = renderRangeDropdown(rangeKey)
+        const enumKey = enumColumnMap[key] || booleanColumnMap[key]
+        if (!enumKey) return leaf
+        const opts = getColumnFilterOptions(enumKey)
+        const filters = opts.map(option => ({
+            text: `${formatFilterLabel(enumKey, option.value)} (${option.count})`,
+            value: option.value,
+        }))
+        const selected = enums.value[enumKey]
+        return {
+            ...leaf,
+            filters,
+            filterMultiple: true,
+            filteredValue: selected && selected.length ? selected.map(value => String(value)) : null,
+            filterDropdown: renderFilterDropdown(enumKey),
         }
-        const sortKey = sortableColumnMap[key]
-        if (sortKey) {
-            const sortInfo = sort.value.find(s => s.id === sortKey)
-            nextCol.sorter = true
-            nextCol.sortOrder = sortInfo ? (sortInfo.desc ? 'descend' : 'ascend') : null
-        }
-        return nextCol
     })
+}
 
-const tableColumns = computed(() => enhanceColumns(antColumns.value))
+const formatFilterLabel = (key: keyof EnumFilters, value: string) => {
+    if (key === 'ewlinkSupported' || key === 'matterSupported' || key === 'homeAssistantSupported') {
+        return value === 'true' ? '是' : '否'
+    }
+    return value || '—'
+}
 
-function applyEnumFiltersFromTable(
-    filters: Record<string, (string | number | boolean)[] | null | undefined>
-): boolean {
+// antd change 事件只告诉我们列 key -> 选中的值，需要映射回 worker 的 enums 结构
+function applyEnumFiltersFromTable(filters: Record<string, FilterValue | null | undefined>) {
+    console.log('applyEnumFiltersFromTable filter -> ', filters);
+    const next = createDefaultEnums()
     let changed = false
-    const nextEnums = createDefaultEnums()
-    Object.entries(enumColumnMap).forEach(([colKey, enumKey]) => {
-        const selected = filters[colKey]
-        if (selected && selected.length) {
-            if (enumKey === 'online') {
-                nextEnums.online = selected.map(value => value === true || value === 'true')
-            } else {
-                nextEnums[enumKey] = selected.map(value => String(value))
-            }
+    const assignValues = (filterKey: keyof EnumFilters, values: (string | number | boolean)[] | null | undefined) => {
+        if (!values || values.length === 0) return
+        if (filterKey === 'ewlinkSupported' || filterKey === 'matterSupported' || filterKey === 'homeAssistantSupported') {
+            next[filterKey] = values.map(val => (String(val) === 'true')) as any
+        } else {
+            next[filterKey] = values.map(val => String(val))
         }
+    }
+    Object.entries(filters).forEach(([columnKey, value]) => {
+        const enumKey = enumColumnMap[columnKey] || booleanColumnMap[columnKey]
+        if (!enumKey) return
+        assignValues(enumKey, value || undefined)
     })
-    const prev = JSON.stringify(enums.value)
-    const next = JSON.stringify(nextEnums)
-    if (prev !== next) {
-        enums.value = nextEnums
+    if (JSON.stringify(next) !== JSON.stringify(enums.value)) {
+        enums.value = next
         changed = true
     }
     return changed
 }
 
-function applySorterFromTable(sorter: any): boolean {
-    let sorterArray: any[] = []
-    if (Array.isArray(sorter)) {
-        sorterArray = sorter
-    } else if (sorter && sorter.order) {
-        sorterArray = [sorter]
-    }
-    const nextSort: SortSpec[] = sorterArray
-        .filter(item => item.order)
-        .map(item => ({
-            id: (sortableColumnMap[item.columnKey as string] ||
-                (item.columnKey as keyof FlatRow)) as keyof FlatRow,
-            desc: item.order === 'descend',
-        }))
-    const prev = JSON.stringify(sort.value)
-    const next = JSON.stringify(nextSort)
-    if (prev !== next) {
-        sort.value = nextSort
-        return true
-    }
-    return false
-}
-
-const handleTableChange = (_pagination: unknown, filters: Record<string, any>, sorter: any) => {
-    const filterChanged = applyEnumFiltersFromTable(filters)
-    const sorterChanged = applySorterFromTable(sorter)
-    if (filterChanged || sorterChanged) {
-        runQuery()
-    }
+const handleTableChange = (_pagination: unknown, filters: Record<string, FilterValue | null>) => {
+    const changed = applyEnumFiltersFromTable(filters)
+    if (changed) runQuery()
 }
 </script>
 
 <template>
     <section class="page-section">
-        <!-- 工具条 -->
         <div class="toolbar">
             <Space class="toolbar-controls">
-                <Input v-model:value="searchText" placeholder="搜索：设备ID / 名称 / 品牌 / 型号 / UI / 类型" style="width: 360px"
-                    allow-clear @input="debouncedQuery()" />
-                <Select v-model:value="matchMode" style="width: 140px" @change="runQuery">
-                    <Select.Option value="contains">包含</Select.Option>
-                    <Select.Option value="startsWith">前缀</Select.Option>
-                    <Select.Option value="endsWith">后缀</Select.Option>
-                    <Select.Option value="equals">等于</Select.Option>
-                </Select>
-
-                <!-- 列显隐 -->
+                <Input v-model:value="searchText" placeholder="搜索：型号 / 品牌 / 类别 / 能力" style="width: 360px" allow-clear
+                    @input="debouncedQuery()" />
                 <Popover trigger="click" placement="bottomLeft">
                     <template #content>
                         <div class="column-popover">
-                            <div class="column-popover-title">列显示</div>
-                            <div v-for="c in leafColumnOptions" :key="c.key" class="column-toggle-row">
-                                <span>{{ c.title }}</span>
-                                <Switch :checked="visibleCols[c.key]"
-                                    @change="(checked: boolean | string | number) => handleColumnVisibilityChange(c.key, checked)" />
+                            <div class="column-popover-title">模块显隐</div>
+                            <div v-for="option in groupOptions" :key="option.key" class="column-toggle-row">
+                                <span>{{ option.title }}</span>
+                                <Switch :checked="groupVisibility[option.key]"
+                                    @change="(checked: boolean | string | number) => handleGroupVisibilityChange(option.key, checked)" />
                             </div>
                         </div>
                     </template>
-                    <Button>列显示</Button>
+                    <Button>模块显示</Button>
                 </Popover>
-
                 <Button @click="resetAll">重置</Button>
             </Space>
 
@@ -560,7 +552,7 @@ const handleTableChange = (_pagination: unknown, filters: Record<string, any>, s
 }
 
 .column-popover {
-    width: 360px;
+    width: 220px;
     max-height: 50vh;
     overflow: auto;
     padding: 8px 4px;
@@ -583,6 +575,43 @@ const handleTableChange = (_pagination: unknown, filters: Record<string, any>, s
 
 .column-toggle-row:hover {
     background: rgba(59, 130, 246, 0.08);
+}
+
+.custom-filter-dropdown {
+    width: 260px;
+    padding: 8px 12px 12px;
+}
+
+.custom-filter-dropdown :deep(.ant-table-filter-dropdown-search) {
+    margin-bottom: 8px;
+}
+
+.filter-menu {
+    max-height: 220px;
+    overflow: auto;
+    border-radius: 6px;
+}
+
+.filter-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.filter-menu-text {
+    flex: 1;
+    color: #1f2937;
+}
+
+.filter-empty {
+    text-align: center;
+    color: #94a3b8;
+    padding: 12px 0;
+}
+
+.filter-more {
+    text-align: center;
+    margin: 6px 0;
 }
 
 .toolbar-stats {
@@ -635,16 +664,6 @@ const handleTableChange = (_pagination: unknown, filters: Record<string, any>, s
     text-align: center;
     color: #6b7280;
     animation: fade-in 0.3s ease;
-}
-
-.range-filter-dropdown {
-    padding: 12px;
-}
-
-.range-filter-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
 }
 
 .tbl-loading {

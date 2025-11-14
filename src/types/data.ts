@@ -1,92 +1,77 @@
-export interface ItemExtra {
-    model?: string
-    ui?: string
-    uiid?: number
-    manufacturer?: string
-    mac?: string
-    apmac?: string
-    modelInfo?: string
-    brandId?: string
+export interface DeviceInfo {
+    model: string
+    type: string
+    brand: string
+    category: string
 }
 
-export interface ItemFamily {
-    familyid?: string
-    index?: number
-    members?: unknown[]
+export interface EwlinkCloud {
+    isSupported: boolean
+    capabilities?: string[]
 }
 
-export interface ItemParams {
-    bindInfos?: Record<string, unknown>
-    parentid?: string
-    type?: string
-    userName?: string
-    rtspUrl?: string
-    pwd?: string
-    subDevices?: Array<{ deviceid: string }>
+export interface ThirdPartyAppSupport {
+    appName: string
+    supportedClusters?: string[]
+    notes?: string[]
 }
 
-export interface ItemData {
-    name?: string
-    deviceid: string
-    apikey?: string
-    extra?: ItemExtra
-    brandName?: string
-    brandLogo?: string
-    showBrand?: boolean
-    productModel?: string
-    tags?: Record<string, unknown>
-    devConfig?: Record<string, unknown>
-    settings?: Record<string, unknown>
-    devGroups?: unknown[]
-    family?: ItemFamily
-    shareTo?: unknown[]
-    devicekey?: string
-    online?: boolean
-    params?: ItemParams
-    isSupportGroup?: boolean
-    isSupportedOnMP?: boolean
-    isSupportChannelSplit?: boolean
-    deviceFeature?: Record<string, unknown>
+export interface MatterDevice {
+    deviceType: string
+    protocolVersion?: string
+    supportedClusters?: string[]
+    unsupportedClusters?: string[]
+    thirdPartyAppSupport?: ThirdPartyAppSupport[]
 }
 
-export interface RawItem {
-    itemType: number
-    itemData: ItemData
-    index?: number
+export interface MatterBridge {
+    isSupported: boolean
+    devices?: MatterDevice[]
 }
 
-export type RawData = RawItem[]
+export interface HomeAssistant {
+    isSupported: boolean
+    entities?: string[]
+}
 
-// 扁平化后的行（2~3 层）
+export interface RawDevice {
+    deviceInfo: DeviceInfo
+    ewlinkCloud?: EwlinkCloud
+    matterBridge?: MatterBridge
+    homeAssistant?: HomeAssistant
+}
+
+export type RawData = RawDevice[]
+
 export interface FlatRow {
-    // 顶层
-    itemType: number
-    index?: number
+    rowId: string
+    parentId: string
+    isGroupHead: boolean
+    groupSpan: number
+    searchText: string
 
-    // 展开 itemData 的常用字段
-    'itemData.name'?: string
-    'itemData.deviceid': string
-    'itemData.brandName'?: string
-    'itemData.productModel'?: string
-    'itemData.online'?: boolean
+    deviceModel: string
+    deviceType: string
+    deviceBrand: string
+    deviceCategory: string
 
-    // 敏感字段（默认打码、不可搜索）
-    'itemData.apikey'?: string
-    'itemData.devicekey'?: string
+    ewlinkSupported: boolean
+    ewlinkCapabilities: string[]
 
-    // extra
-    'itemData.extra.model'?: string
-    'itemData.extra.ui'?: string
-    'itemData.extra.uiid'?: number
+    matterSupported: boolean
+    matterDeviceType?: string
+    matterProtocolVersion?: string
+    matterSupportedClusters: string[]
+    matterUnsupportedClusters: string[]
+    appleSupported: string[]
+    appleNotes: string[]
+    googleSupported: string[]
+    googleNotes: string[]
+    smartThingsSupported: string[]
+    smartThingsNotes: string[]
+    alexaSupported: string[]
+    alexaNotes: string[]
 
-    // params
-    'itemData.params.type'?: string
-    'itemData.params.parentid'?: string
-
-    // family
-    'itemData.family.familyid'?: string
-    'itemData.family.index'?: number
-
-    // 其余大对象不展开，原始保留
-    __raw?: RawItem
+    homeAssistantSupported: boolean
+    homeAssistantEntities: string[]
 }
